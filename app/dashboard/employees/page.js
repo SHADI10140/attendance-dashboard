@@ -105,7 +105,7 @@ export default function EmployeesPage() {
 
   async function handleSave(form) {
     try {
-      if (editEmp) await updateEmployee(editEmp.id, form)
+      if (editEmp) await updateEmployee(editEmp.id, { name_ar: form.name_ar, name_en: form.name_en, role_ar: form.role_ar, role_en: form.role_en, salary: form.salary, ot_rate: form.ot_rate, bonus: form.bonus, phone: form.phone, hire_date: form.hire_date, username: form.username, pass: form.pass, shift_id: form.shift_id || null, dept_id: form.dept_id || null })
       else await addEmployee(form)
       setShowModal(false)
       setEditEmp(null)
