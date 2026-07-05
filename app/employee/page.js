@@ -145,11 +145,15 @@ const [showPassModal, setShowPassModal] = useState(false)
     if (!selIdx && selIdx !== 0) return setError('اختر موظفاً')
     const emp = employees[parseInt(selIdx)]
     if (!emp) return setError('موظف غير موجود')
-    if (emp.pass !== pass && pass !== '1234') return setError('كلمة المرور غير صحيحة')
-    setCurrentEmp(emp)
-    await fetchTodayAtt(emp.id)
-    await fetchHistory(emp.id)
-    await fetchMonthStats(emp.id)
+    // جلب أحدث بيانات الموظف من قاعدة البيانات للتحقق
+    const { data: fresh } = await supabase
+      .from('employees').select('*').eq('id', emp.id).single()
+    const target = fresh || emp
+    if ((target.pass || '1234') !== pass) return setError('كلمة المرور غير صحيحة')
+    setCurrentEmp(target)
+    await fetchTodayAtt(target.id)
+    await fetchHistory(target.id)
+    await fetchMonthStats(target.id)
     setScreen('home')
   }
 
