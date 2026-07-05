@@ -13,13 +13,25 @@ function getDistance(lat1, lng1, lat2, lng2) {
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a))
 }
 
-// ─── إعدادات الموقع المسموح ───
+/// ─── إعدادات الموقع المسموح ───
 const ALLOWED = {
   lat:    31.429806,
   lng:    31.673333,
   radius: 1000
 }
 
+// ─── جلب إعدادات الموقع من قاعدة البيانات ───
+async function fetchLocationSettings() {
+  const { data } = await supabase.from('settings').select('*')
+    .in('key', ['loc_lat', 'loc_lng', 'loc_radius'])
+  const map = {}
+  data?.forEach(s => { map[s.key] = s.value })
+  return {
+    lat:    parseFloat(map.loc_lat)    || ALLOWED.lat,
+    lng:    parseFloat(map.loc_lng)    || ALLOWED.lng,
+    radius: parseFloat(map.loc_radius) || ALLOWED.radius
+  }
+}
 export default function EmployeeApp() {
   const [screen,     setScreen]     = useState('login')   // login | home
   const [employees,  setEmployees]  = useState([])
@@ -36,6 +48,12 @@ export default function EmployeeApp() {
   const [history,    setHistory]    = useState([])
   const [monthStats, setMonthStats] = useState({ present: 0, late: 0, absent: 0, hours: 0 })
   const [error,      setError]      = useState('')
+  const [allowedLoc, setAllowedLoc] = useState(ALLOWED)
+
+  // ─── تحميل إعدادات الموقع ───
+  useEffect(() => {
+    fetchLocationSettings().then(setAllowedLoc)
+  }, [])
 const [showPassModal, setShowPassModal] = useState(false)
   const [oldPass,       setOldPass]       = useState('')
   const [newPass,       setNewPass]       = useState('')
@@ -88,15 +106,15 @@ const [showPassModal, setShowPassModal] = useState(false)
       pos => {
         const { latitude: lat, longitude: lng } = pos.coords
         setLocation({ lat, lng })
-        const dist = getDistance(lat, lng, ALLOWED.lat, ALLOWED.lng)
+        const dist = getDistance(lat, lng, allowedLoc.lat, allowedLoc.lng)
         setLocDist(Math.round(dist))
-        setLocOk(dist <= ALLOWED.radius)
+        setLocOk(dist <= allowedLoc.radius)
       },
       () => { setLocOk(true); setLocDist(0) },
       { enableHighAccuracy: true }
     )
     return () => navigator.geolocation.clearWatch(watcher)
-  }, [screen])
+  }, [screen, allowedLoc])
 
   // ─── جلب حضور اليوم ───
   async function fetchTodayAtt(empId) {
@@ -163,8 +181,8 @@ const [showPassModal, setShowPassModal] = useState(false)
     if (!currentEmp) return
     setLoading(true)
     try {
-      const lat = location?.lat || ALLOWED.lat
-      const lng = location?.lng || ALLOWED.lng
+      const lat = location?.lat || allowedLoc.lat
+      const lng = location?.lng || allowedLoc.lng
 
       if (!todayAtt?.check_in) {
         const data = await checkIn(currentEmp.id, lat, lng)
@@ -285,7 +303,7 @@ const [showPassModal, setShowPassModal] = useState(false)
               <span className={`w-2 h-2 rounded-full ${locOk ? 'bg-green-500' : 'bg-red-500'} animate-pulse`}/>
               {locOk
                 ? `داخل النطاق ${locDist !== null ? `(${locDist}م)` : ''}`
-                : `خارج النطاق! (${locDist}م — مسموح ${ALLOWED.radius}م)`}
+                : `خارج النطاق! (${locDist}م — مسموح ${allowedLoc.radius}م)`}
             </div>
 
             {/* Times */}
