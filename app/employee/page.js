@@ -34,6 +34,7 @@ export default function EmployeeApp() {
   const [clock,      setClock]      = useState('')
   const [activeTab,  setActiveTab]  = useState('home')
   const [history,    setHistory]    = useState([])
+  const [monthStats, setMonthStats] = useState({ present: 0, late: 0, absent: 0, hours: 0 })
   const [error,      setError]      = useState('')
 
   // ─── جلب الموظفين ───
@@ -94,6 +95,24 @@ export default function EmployeeApp() {
     setHistory(data || [])
   }
 
+  // ─── جلب إحصائيات الشهر ───
+  async function fetchMonthStats(empId) {
+    const now   = new Date()
+    const first = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`
+    const { data } = await supabase
+      .from('attendance')
+      .select('status, work_hours')
+      .eq('employee_id', empId)
+      .gte('date', first)
+    const rows = data || []
+    setMonthStats({
+      present: rows.filter(r => r.status === 'present').length,
+      late:    rows.filter(r => r.status === 'late').length,
+      absent:  rows.filter(r => r.status === 'absent').length,
+      hours:   rows.reduce((s, r) => s + (parseFloat(r.work_hours) || 0), 0)
+    })
+  }
+
   // ─── تسجيل الدخول ───
   async function handleLogin() {
     setError('')
@@ -104,6 +123,7 @@ export default function EmployeeApp() {
     setCurrentEmp(emp)
     await fetchTodayAtt(emp.id)
     await fetchHistory(emp.id)
+    await fetchMonthStats(emp.id)
     setScreen('home')
   }
 
@@ -128,6 +148,7 @@ export default function EmployeeApp() {
         alert('تم تسجيل الحضور والانصراف اليوم بالفعل')
       }
       await fetchHistory(currentEmp.id)
+      await fetchMonthStats(currentEmp.id)
     } catch(e) {
       alert('خطأ: ' + e.message)
     } finally {
@@ -234,7 +255,7 @@ export default function EmployeeApp() {
               <span className={`w-2 h-2 rounded-full ${locOk ? 'bg-green-500' : 'bg-red-500'} animate-pulse`}/>
               {locOk
                 ? `داخل النطاق ${locDist !== null ? `(${locDist}م)` : ''}`
-                : `خارج النطاق! (${locDist}م — مسموح 500م)`}
+                : `خارج النطاق! (${locDist}م — مسموح ${ALLOWED.radius}م)`}
             </div>
 
             {/* Times */}
@@ -285,7 +306,32 @@ export default function EmployeeApp() {
           </div>
         </>}
 
-        {activeTab === 'profile' && (
+        {activeTab === 'profile' && <>
+          {/* إحصائيات الشهر */}
+          <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
+            <h3 className="text-sm font-semibold text-gray-700 mb-3">
+              إحصائيات شهر {new Date().toLocaleDateString('ar-EG', { month: 'long' })}
+            </h3>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="bg-green-50 rounded-xl p-3 text-center">
+                <div className="text-xl font-bold text-green-600">{monthStats.present}</div>
+                <div className="text-xs text-gray-500 mt-1">أيام حضور</div>
+              </div>
+              <div className="bg-orange-50 rounded-xl p-3 text-center">
+                <div className="text-xl font-bold text-orange-500">{monthStats.late}</div>
+                <div className="text-xs text-gray-500 mt-1">أيام تأخير</div>
+              </div>
+              <div className="bg-red-50 rounded-xl p-3 text-center">
+                <div className="text-xl font-bold text-red-500">{monthStats.absent}</div>
+                <div className="text-xs text-gray-500 mt-1">أيام غياب</div>
+              </div>
+              <div className="bg-blue-50 rounded-xl p-3 text-center">
+                <div className="text-xl font-bold text-blue-600">{monthStats.hours.toFixed(1)}</div>
+                <div className="text-xs text-gray-500 mt-1">إجمالي الساعات</div>
+              </div>
+            </div>
+          </div>
+
           <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
             <div className="w-16 h-16 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center text-2xl font-bold mx-auto mb-3">
               {currentEmp?.name_ar?.charAt(0)}
@@ -307,7 +353,7 @@ export default function EmployeeApp() {
               تسجيل الخروج
             </button>
           </div>
-        )}
+        </>}
       </div>
 
       {/* Bottom Nav */}
