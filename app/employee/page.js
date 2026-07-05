@@ -36,7 +36,33 @@ export default function EmployeeApp() {
   const [history,    setHistory]    = useState([])
   const [monthStats, setMonthStats] = useState({ present: 0, late: 0, absent: 0, hours: 0 })
   const [error,      setError]      = useState('')
+const [showPassModal, setShowPassModal] = useState(false)
+  const [oldPass,       setOldPass]       = useState('')
+  const [newPass,       setNewPass]       = useState('')
+  const [confirmPass,   setConfirmPass]   = useState('')
+  const [passSaving,    setPassSaving]    = useState(false)
 
+  // ─── تغيير كلمة المرور ───
+  async function handleChangePassword() {
+    if (oldPass !== (currentEmp?.pass || '1234')) return alert('كلمة المرور الحالية غير صحيحة')
+    if (!newPass || newPass.length < 4) return alert('كلمة المرور الجديدة لازم تكون 4 أحرف/أرقام على الأقل')
+    if (newPass !== confirmPass) return alert('تأكيد كلمة المرور غير مطابق')
+    setPassSaving(true)
+    try {
+      const { data, error } = await supabase
+        .from('employees').update({ pass: newPass })
+        .eq('id', currentEmp.id).select().single()
+      if (error) throw error
+      setCurrentEmp(data)
+      setShowPassModal(false)
+      setOldPass(''); setNewPass(''); setConfirmPass('')
+      alert('✅ تم تغيير كلمة المرور بنجاح')
+    } catch (e) {
+      alert('خطأ: ' + e.message)
+    } finally {
+      setPassSaving(false)
+    }
+  }
   // ─── جلب الموظفين ───
   useEffect(() => {
     supabase.from('employees').select('*').eq('active', true)
@@ -348,6 +374,33 @@ export default function EmployeeApp() {
                 <span className="font-medium">{v||'--'}</span>
               </div>
             ))}
+            <button onClick={() => setShowPassModal(true)}
+              className="w-full mt-4 py-2.5 border border-blue-200 text-blue-600 rounded-xl text-sm font-bold hover:bg-blue-50">
+              🔑 تغيير كلمة المرور
+            </button>
+
+            {showPassModal && (
+              <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50">
+                <div className="bg-white rounded-2xl p-5 w-full max-w-xs space-y-3" dir="rtl">
+                  <h3 className="text-base font-bold text-gray-800 text-center">تغيير كلمة المرور</h3>
+                  <input type="password" placeholder="كلمة المرور الحالية" value={oldPass}
+                    onChange={e => setOldPass(e.target.value)}
+                    className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-blue-400"/>
+                  <input type="password" placeholder="كلمة المرور الجديدة" value={newPass}
+                    onChange={e => setNewPass(e.target.value)}
+                    className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-blue-400"/>
+                  <input type="password" placeholder="تأكيد كلمة المرور الجديدة" value={confirmPass}
+                    onChange={e => setConfirmPass(e.target.value)}
+                    className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-blue-400"/>
+                  <button onClick={handleChangePassword} disabled={passSaving}
+                    className="w-full bg-blue-600 text-white rounded-xl py-2.5 text-sm font-bold hover:bg-blue-700">
+                    {passSaving ? 'جارٍ الحفظ...' : 'حفظ'}
+                  </button>
+                  <button onClick={() => {setShowPassModal(false); setOldPass(''); setNewPass(''); setConfirmPass('')}}
+                    className="w-full py-2 text-gray-400 text-sm">إلغاء</button>
+                </div>
+              </div>
+            )}
             <button onClick={()=>{setScreen('login');setCurrentEmp(null);setTodayAtt(null)}}
               className="w-full mt-4 py-2.5 border border-red-200 text-red-500 rounded-xl text-sm font-bold hover:bg-red-50">
               تسجيل الخروج
