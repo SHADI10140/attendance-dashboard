@@ -1,18 +1,16 @@
 'use client'
 import { useEffect, useState } from 'react'
-import { Users, UserCheck, Clock, UserX, RefreshCw, TrendingUp, DollarSign } from 'lucide-react'
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
-import { getEmployees, getTodayAttendance } from '@/lib/supabase'
+import { Users, UserCheck, Clock, UserX, ChevronRight, ChevronLeft, Calendar, FileText } from 'lucide-react'
+import { getEmployees, supabase } from '@/lib/supabase'
 
-const weekData = [
-  { day: 'أحد',    rate: 88 },
-  { day: 'اثنين',  rate: 92 },
-  { day: 'ثلاثاء', rate: 75 },
-  { day: 'أربعاء', rate: 90 },
-  { day: 'خميس',  rate: 95 },
-  { day: 'جمعة',  rate: 70 },
-  { day: 'سبت',   rate: 85 },
-]
+// ─── أدوات التاريخ ───
+const todayStr = () => new Date().toISOString().split('T')[0]
+const firstOfMonth = () => {
+  const n = new Date()
+  return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}-01`
+}
+const fmtTime = t => t ? new Date(t).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' }) : '--:--'
+const fmtDate = d => new Date(d + 'T00:00:00').toLocaleDateString('ar-EG', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
 
 function KpiCard({ icon: Icon, value, label, color }) {
   const colors = {
@@ -32,162 +30,202 @@ function KpiCard({ icon: Icon, value, label, color }) {
   )
 }
 
-export default function DashboardPage() {
+export default function AttendancePage() {
+  const [tab,        setTab]        = useState('day')       // day | report
   const [employees,  setEmployees]  = useState([])
-  const [attendance, setAttendance] = useState([])
-  const [loading,    setLoading]    = useState(true)
-  const [lastUpdate, setLastUpdate] = useState(new Date())
 
-  async function fetchData() {
-    try {
-      const [emps, att] = await Promise.all([
-        getEmployees(),
-        getTodayAttendance()
-      ])
-      setEmployees(emps  || [])
-      setAttendance(att  || [])
-      setLastUpdate(new Date())
-    } catch(err) {
-      console.error('خطأ:', err)
-    } finally {
-      setLoading(false)
-    }
+  // ─── عرض يوم ───
+  const [selDate,    setSelDate]    = useState(todayStr())
+  const [dayAtt,     setDayAtt]     = useState([])
+  const [dayLoading, setDayLoading] = useState(true)
+
+  // ─── تقرير فترة ───
+  const [fromDate,   setFromDate]   = useState(firstOfMonth())
+  const [toDate,     setToDate]     = useState(todayStr())
+  const [rangeAtt,   setRangeAtt]   = useState([])
+  const [repLoading, setRepLoading] = useState(false)
+
+  useEffect(() => { getEmployees().then(d => setEmployees(d || [])) }, [])
+
+  // ─── جلب حضور اليوم المحدد ───
+  useEffect(() => {
+    setDayLoading(true)
+    supabase.from('attendance').select('*').eq('date', selDate)
+      .then(({ data }) => { setDayAtt(data || []); setDayLoading(false) })
+  }, [selDate])
+
+  // ─── جلب تقرير الفترة ───
+  async function loadReport() {
+    setRepLoading(true)
+    const { data } = await supabase.from('attendance').select('*')
+      .gte('date', fromDate).lte('date', toDate)
+    setRangeAtt(data || [])
+    setRepLoading(false)
+  }
+  useEffect(() => { if (tab === 'report') loadReport() }, [tab])
+
+  // ─── تحريك اليوم ───
+  function shiftDay(days) {
+    const d = new Date(selDate + 'T00:00:00')
+    d.setDate(d.getDate() + days)
+    setSelDate(d.toISOString().split('T')[0])
   }
 
-  useEffect(() => { fetchData() }, [])
+  // ─── حسابات اليوم ───
+  const presentCnt = dayAtt.filter(a => a.status === 'present').length
+  const lateCnt    = dayAtt.filter(a => a.status === 'late').length
+  const absentCnt  = employees.length - presentCnt - lateCnt
 
-  const totalEmps   = employees.length
-  const presentCnt  = attendance.filter(a => a.status === 'present').length
-  const lateCnt     = attendance.filter(a => a.status === 'late').length
-  const absentCnt   = Math.max(0, totalEmps - presentCnt - lateCnt)
-  const totalSalary = employees.reduce((s, e) => s + (e.salary || 0), 0)
-
-  if (loading) return (
-    <div className="flex items-center justify-center h-64">
-      <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600" />
-    </div>
-  )
+  // ─── صفوف التقرير ───
+  const reportRows = employees.map(emp => {
+    const recs = rangeAtt.filter(a => a.employee_id === emp.id)
+    return {
+      emp,
+      present: recs.filter(r => r.status === 'present').length,
+      late:    recs.filter(r => r.status === 'late').length,
+      absent:  recs.filter(r => r.status === 'absent').length,
+      hours:   recs.reduce((s, r) => s + (parseFloat(r.work_hours) || 0), 0),
+    }
+  })
 
   return (
-    <div className="space-y-5" dir="rtl">
-
-      {/* شريط مباشر */}
-      <div className="bg-green-50 border border-green-200 rounded-xl px-4 py-3 flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse inline-block" />
-          <span className="text-sm text-green-700 font-medium">مباشر — يتحدث عند كل بصمة</span>
-        </div>
-        <button onClick={fetchData} className="flex items-center gap-1 text-xs text-gray-400 hover:text-blue-600">
-          <RefreshCw size={12} /> {lastUpdate.toLocaleTimeString('ar-EG')}
-        </button>
-      </div>
-
-      {/* KPIs */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <KpiCard icon={Users}     value={totalEmps}  label="إجمالي الموظفين" color="blue" />
-        <KpiCard icon={UserCheck} value={presentCnt} label="حاضر اليوم"      color="green" />
-        <KpiCard icon={Clock}     value={lateCnt}    label="متأخر اليوم"     color="orange" />
-        <KpiCard icon={UserX}     value={absentCnt}  label="غائب اليوم"      color="red" />
-      </div>
-
-      {/* Charts */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
-          <h3 className="text-sm font-semibold text-gray-700 mb-4 flex items-center gap-2">
-            <TrendingUp size={16} className="text-blue-500" /> معدل الحضور الأسبوعي
-          </h3>
-          <ResponsiveContainer width="100%" height={160}>
-            <BarChart data={weekData} barSize={24}>
-              <XAxis dataKey="day" tick={{ fontSize: 11 }} />
-              <YAxis tick={{ fontSize: 10 }} domain={[0, 100]} unit="%" />
-              <Tooltip formatter={v => `${v}%`} />
-              <Bar dataKey="rate" fill="#1a73e8" radius={[4, 4, 0, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
-
-        <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
-          <h3 className="text-sm font-semibold text-gray-700 mb-4 flex items-center gap-2">
-            <DollarSign size={16} className="text-green-500" /> ملخص الرواتب
-          </h3>
-          <div className="space-y-3 mt-2">
-            <div className="flex justify-between text-sm py-2 border-b border-gray-50">
-              <span className="text-gray-400">إجمالي الرواتب الأساسية</span>
-              <span className="font-medium text-green-600">{totalSalary.toLocaleString()} ج.م</span>
-            </div>
-            <div className="flex justify-between text-sm py-2 border-b border-gray-50">
-              <span className="text-gray-400">عدد الموظفين النشطين</span>
-              <span className="font-medium text-blue-600">{employees.filter(e => e.active).length}</span>
-            </div>
-            <div className="flex justify-between text-sm py-2 font-bold">
-              <span>متوسط الراتب</span>
-              <span className="text-blue-600">
-                {totalEmps ? Math.round(totalSalary / totalEmps).toLocaleString() : 0} ج.م
-              </span>
-            </div>
-          </div>
+    <div className="p-6" dir="rtl">
+      <div className="flex items-center justify-between mb-6">
+        <h1 className="text-xl font-bold text-gray-800">سجل الحضور</h1>
+        {/* التبويبات */}
+        <div className="flex bg-gray-100 rounded-xl p-1 text-sm">
+          <button onClick={() => setTab('day')}
+            className={`px-4 py-1.5 rounded-lg flex items-center gap-1.5 ${tab === 'day' ? 'bg-white shadow-sm font-bold text-blue-600' : 'text-gray-500'}`}>
+            <Calendar size={15}/> عرض يوم
+          </button>
+          <button onClick={() => setTab('report')}
+            className={`px-4 py-1.5 rounded-lg flex items-center gap-1.5 ${tab === 'report' ? 'bg-white shadow-sm font-bold text-blue-600' : 'text-gray-500'}`}>
+            <FileText size={15}/> تقرير فترة
+          </button>
         </div>
       </div>
 
-      {/* جدول الحضور */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-100">
-        <div className="flex items-center justify-between p-4 border-b border-gray-50">
-          <h3 className="text-sm font-semibold text-gray-700">
-            سجل الحضور اليوم — {new Date().toLocaleDateString('ar-EG', { weekday: 'long', day: 'numeric', month: 'long' })}
-          </h3>
+      {tab === 'day' && <>
+        {/* اختيار التاريخ */}
+        <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100 mb-5 flex items-center gap-3 flex-wrap">
+          <button onClick={() => shiftDay(-1)} className="p-2 rounded-lg hover:bg-gray-50 text-gray-400" title="اليوم السابق">
+            <ChevronRight size={18}/>
+          </button>
+          <input type="date" value={selDate} max={todayStr()} onChange={e => setSelDate(e.target.value)}
+            className="border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-blue-400"/>
+          <button onClick={() => shiftDay(1)} disabled={selDate >= todayStr()}
+            className="p-2 rounded-lg hover:bg-gray-50 text-gray-400 disabled:opacity-30" title="اليوم التالي">
+            <ChevronLeft size={18}/>
+          </button>
+          <button onClick={() => setSelDate(todayStr())}
+            className="text-xs text-blue-600 font-bold px-3 py-1.5 rounded-lg hover:bg-blue-50">اليوم</button>
+          <span className="text-sm font-medium text-gray-600 mr-auto">{fmtDate(selDate)}</span>
         </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="text-right text-xs text-gray-400 border-b border-gray-50 bg-gray-50/50">
-                <th className="px-4 py-3 font-medium">الموظف</th>
-                <th className="px-4 py-3 font-medium">الشيفت</th>
-                <th className="px-4 py-3 font-medium">حضور</th>
-                <th className="px-4 py-3 font-medium">انصراف</th>
-                <th className="px-4 py-3 font-medium">الحالة</th>
-              </tr>
-            </thead>
-            <tbody>
-              {attendance.length === 0 ? (
-                <tr>
-                  <td colSpan={5} className="text-center text-gray-300 py-10">
-                    لا توجد سجلات حضور اليوم
-                  </td>
+
+        {/* كروت الإحصائيات */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-5">
+          <KpiCard icon={Users}     value={employees.length} label="إجمالي الموظفين" color="blue"/>
+          <KpiCard icon={UserCheck} value={presentCnt}       label="حاضر"            color="green"/>
+          <KpiCard icon={Clock}     value={lateCnt}          label="متأخر"           color="orange"/>
+          <KpiCard icon={UserX}     value={absentCnt < 0 ? 0 : absentCnt} label="غائب / لم يسجل" color="red"/>
+        </div>
+
+        {/* جدول اليوم */}
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-x-auto">
+          {dayLoading ? (
+            <p className="text-center text-gray-400 py-10">جارٍ التحميل...</p>
+          ) : (
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-gray-50 text-gray-500 text-xs">
+                  <th className="py-3 px-4 text-right">الموظف</th>
+                  <th className="py-3 px-4 text-center">حضور</th>
+                  <th className="py-3 px-4 text-center">انصراف</th>
+                  <th className="py-3 px-4 text-center">ساعات</th>
+                  <th className="py-3 px-4 text-center">الحالة</th>
                 </tr>
-              ) : attendance.map(a => (
-                <tr key={a.id} className="border-b border-gray-50 hover:bg-gray-50/50">
-                  <td className="px-4 py-3">
-                    <div className="flex items-center gap-2">
-                      <div className="w-7 h-7 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center text-xs font-bold">
-                        {a.employees?.name_ar?.charAt(0)}
-                      </div>
-                      <div>
-                        <div className="font-medium text-gray-700">{a.employees?.name_ar}</div>
-                        <div className="text-xs text-gray-400">{a.employees?.emp_code}</div>
-                      </div>
-                    </div>
-                  </td>
-                  <td className="px-4 py-3 text-gray-500 text-xs">{a.employees?.shifts?.name_ar || '--'}</td>
-                  <td className="px-4 py-3 text-green-600 font-medium">
-                    {a.check_in ? new Date(a.check_in).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' }) : '--'}
-                  </td>
-                  <td className="px-4 py-3 text-red-500">
-                    {a.check_out ? new Date(a.check_out).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' }) : '--'}
-                  </td>
-                  <td className="px-4 py-3">
-                    <span className={`px-2 py-0.5 rounded-full text-xs font-bold
-                      ${a.status === 'present' ? 'bg-green-100 text-green-700' :
-                        a.status === 'late'    ? 'bg-orange-100 text-orange-700' :
-                                                  'bg-red-100 text-red-700'}`}>
-                      {a.status === 'present' ? 'حاضر' : a.status === 'late' ? 'متأخر' : 'غائب'}
-                    </span>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {employees.map(emp => {
+                  const rec = dayAtt.find(a => a.employee_id === emp.id)
+                  return (
+                    <tr key={emp.id} className="border-t border-gray-50 hover:bg-gray-50/50">
+                      <td className="py-3 px-4">
+                        <div className="font-medium text-gray-800">{emp.name_ar}</div>
+                        <div className="text-xs text-gray-400">{emp.emp_code}</div>
+                      </td>
+                      <td className="py-3 px-4 text-center font-bold text-green-600">{fmtTime(rec?.check_in)}</td>
+                      <td className="py-3 px-4 text-center font-bold text-red-500">{fmtTime(rec?.check_out)}</td>
+                      <td className="py-3 px-4 text-center text-blue-600 font-bold">
+                        {rec?.work_hours ? `${parseFloat(rec.work_hours).toFixed(1)}` : '--'}
+                      </td>
+                      <td className="py-3 px-4 text-center">
+                        <span className={`px-2 py-0.5 rounded-full text-xs font-bold
+                          ${!rec ? 'bg-gray-100 text-gray-500' :
+                            rec.status === 'present' ? 'bg-green-100 text-green-700' :
+                            rec.status === 'late'    ? 'bg-orange-100 text-orange-700' :
+                            'bg-red-100 text-red-600'}`}>
+                          {!rec ? 'لم يسجل' : rec.status === 'present' ? 'حاضر' : rec.status === 'late' ? 'متأخر' : 'غائب'}
+                        </span>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          )}
         </div>
-      </div>
+      </>}
+
+      {tab === 'report' && <>
+        {/* اختيار الفترة */}
+        <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100 mb-5 flex items-center gap-3 flex-wrap">
+          <span className="text-sm text-gray-500">من</span>
+          <input type="date" value={fromDate} max={toDate} onChange={e => setFromDate(e.target.value)}
+            className="border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-blue-400"/>
+          <span className="text-sm text-gray-500">إلى</span>
+          <input type="date" value={toDate} min={fromDate} max={todayStr()} onChange={e => setToDate(e.target.value)}
+            className="border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-blue-400"/>
+          <button onClick={loadReport}
+            className="bg-blue-600 text-white rounded-xl px-4 py-2 text-sm font-bold hover:bg-blue-700">
+            عرض التقرير
+          </button>
+        </div>
+
+        {/* جدول التقرير */}
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-x-auto">
+          {repLoading ? (
+            <p className="text-center text-gray-400 py-10">جارٍ التحميل...</p>
+          ) : (
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-gray-50 text-gray-500 text-xs">
+                  <th className="py-3 px-4 text-right">الموظف</th>
+                  <th className="py-3 px-4 text-center">أيام حضور</th>
+                  <th className="py-3 px-4 text-center">أيام تأخير</th>
+                  <th className="py-3 px-4 text-center">أيام غياب</th>
+                  <th className="py-3 px-4 text-center">إجمالي الساعات</th>
+                </tr>
+              </thead>
+              <tbody>
+                {reportRows.map(({ emp, present, late, absent, hours }) => (
+                  <tr key={emp.id} className="border-t border-gray-50 hover:bg-gray-50/50">
+                    <td className="py-3 px-4">
+                      <div className="font-medium text-gray-800">{emp.name_ar}</div>
+                      <div className="text-xs text-gray-400">{emp.emp_code} — {emp.role_ar || ''}</div>
+                    </td>
+                    <td className="py-3 px-4 text-center font-bold text-green-600">{present}</td>
+                    <td className="py-3 px-4 text-center font-bold text-orange-500">{late}</td>
+                    <td className="py-3 px-4 text-center font-bold text-red-500">{absent}</td>
+                    <td className="py-3 px-4 text-center font-bold text-blue-600">{hours.toFixed(1)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+        <p className="text-xs text-gray-400 mt-3">💡 أيام الغياب = الأيام المسجلة بحالة "غائب" فقط. الأيام بدون أي تسجيل لا تُحتسب تلقائياً.</p>
+      </>}
     </div>
   )
 }
