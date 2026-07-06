@@ -13,7 +13,12 @@ async function getSettings() {
 
 // ─── حفظ إعداد ───
 async function saveSetting(key, value) {
-  await supabase.from('settings').upsert({ key, value: String(value) })
+  const { data } = await supabase.from('settings').select('key').eq('key', key)
+  if (data && data.length > 0) {
+    await supabase.from('settings').update({ value: String(value) }).eq('key', key)
+  } else {
+    await supabase.from('settings').insert([{ key, value: String(value) }])
+  }
 }
 
 // ─── حذف موظف ───
